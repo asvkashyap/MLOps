@@ -1,0 +1,7 @@
+# Created at runtime, not part of the lab's source
+logs/
+plugins/
+working_data/
+dags/model/
+.env
+__pycache__/
