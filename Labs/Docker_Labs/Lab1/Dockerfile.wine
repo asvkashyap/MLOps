@@ -1,0 +1,35 @@
+# Stage 1: train the model. This stage's tools (build chain, pip cache) never
+# reach the final image, which is what keeps it small.
+FROM python:3.11-slim AS trainer
+
+WORKDIR /app
+COPY src/requirements-wine.txt .
+RUN pip install --no-cache-dir -r requirements-wine.txt
+
+COPY src/train_wine.py .
+RUN python train_wine.py
+# Produces /app/model/wine_model.pkl, scaler.pkl, metadata.json
+
+
+# Stage 2: serve predictions. Starts fresh from a slim base; only the trained
+# artifacts and the serving code are copied in, not the training script.
+FROM python:3.11-slim AS final
+
+WORKDIR /app
+COPY src/requirements-wine.txt .
+RUN pip install --no-cache-dir -r requirements-wine.txt \
+    && addgroup --system app && adduser --system --ingroup app app
+
+COPY src/serve.py .
+COPY --from=trainer /app/model ./model
+RUN chown -R app:app /app
+USER app
+
+EXPOSE 8000
+
+# Docker restarts the container if this starts failing. curl isn't installed
+# in -slim, so the check calls the app itself over Python's stdlib instead.
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2)" || exit 1
+
+CMD ["python", "serve.py"]
